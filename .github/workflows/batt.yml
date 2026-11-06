@@ -8,39 +8,27 @@ jobs:
       - name: battery
         run: |
           set -u
-          H1=https://api.ecourtdate.com
-          HE=https://us-east.ecourtdate.com
           HA=https://app.ecourtdate.com
-          A=https://ecourtdate.us.auth0.com
-          echo "=== us-east host ==="
-          for p in / /health /v1/schedules /v1/users/current /oauth/ecdauth0 /logout; do
-            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 "$HE$p" || echo ERR)
-            echo "UE GET $p -> $code :: $(head -c 110 /tmp/b | tr '\n' ' ')"
-            sleep 1
-          done
-          echo "=== app host (SPA) ==="
-          for p in / /login /config.json /env.json /manifest.json /robots.txt; do
-            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 "$HA$p" || echo ERR)
-            echo "AP GET $p -> $code :: $(head -c 80 /tmp/b | tr '\n' ' ')"
-            sleep 1
-          done
-          echo "=== device flow probe ==="
-          curl -s --max-time 15 -X POST "$A/oauth/device/code" -H 'Content-Type: application/x-www-form-urlencoded' -d 'client_id=C5aRYUevyR9BDi1THXm1JhgE4PHxNK33&scope=openid profile email' | head -c 250
-          echo
-          sleep 1
-          echo "=== fake-bearer shape on live routes ==="
-          for p in /v1/users/current /v1/schedules /v1/locations; do
-            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 -H 'Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJwcm9iZSIsImV4cCI6OTk5OTk5OTk5OX0.fake-sig' "$H1$p" || echo ERR)
-            echo "FB GET $p -> $code :: $(head -c 130 /tmp/b | tr '\n' ' ')"
-            sleep 1
-          done
-          echo "=== id_token-shape probe ==="
-          code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 -H 'Authorization: Bearer probe-opaque-token-123' "$H1/v1/users/current" || echo ERR)
-          echo "OP GET /v1/users/current -> $code :: $(head -c 130 /tmp/b | tr '\n' ' ')"
-          echo "=== citations deeper ==="
-          for p in /api/health /v1/citations /citations /search /api/citations /v2/citations /v1/courts /v1/judges /health/detail /status; do
-            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 "https://api.citations.ecourtdate.com$p" || echo ERR)
-            echo "CT GET $p -> $code :: $(head -c 110 /tmp/b | tr '\n' ' ')"
-            sleep 1
-          done
-          echo "BATT6_DONE"
+          HE=https://us-east.ecourtdate.com
+          echo "=== index HTML diff ==="
+          curl -s --compressed --max-time 15 "$HA/" -o /tmp/ha.html
+          curl -s --compressed --max-time 15 "$HE/" -o /tmp/he.html
+          echo "app / size: $(wc -c < /tmp/ha.html) | us-east / size: $(wc -c < /tmp/he.html)"
+          diff <(tr '>' '>\n' < /tmp/ha.html) <(tr '>' '>\n' < /tmp/he.html) | head -30
+          echo "=== script srcs app ==="
+          grep -oE '(src|href)="[^"]+\.(js|css)"' /tmp/ha.html | head -10
+          echo "=== script srcs us-east ==="
+          grep -oE '(src|href)="[^"]+\.(js|css)"' /tmp/he.html | head -10
+          echo "=== chunk exists cross-check ==="
+          APPCHUNK=$(grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' /tmp/ha.html | head -1)
+          UECHUNK=$(grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' /tmp/he.html | head -1)
+          echo "app chunk: $APPCHUNK | us-east chunk: $UECHUNK"
+          if [ -n "$APPCHUNK" ]; then
+            curl -s --compressed --max-time 20 -o /tmp/ach.js "$HA$APPCHUNK"; echo "app chunk sha: $(sha256sum /tmp/ach.js | cut -c1-16) size: $(wc -c < /tmp/ach.js)"
+          fi
+          if [ -n "$UECHUNK" ]; then
+            curl -s --compressed --max-time 20 -o /tmp/uec.js "$HE$UECHUNK"; echo "us-east chunk sha: $(sha256sum /tmp/uec.js | cut -c1-16) size: $(wc -c < /tmp/uec.js)"
+          fi
+          echo "=== us-east API config hints in chunk ==="
+          if [ -n "$UECHUNK" ]; then grep -oE '(api[a-z.-]*\.ecourtdate\.com|ecourtdate[a-z.-]*\.(com|io)|/v1/[a-z/_-]+)' /tmp/uec.js | sort -u | head -20; fi
+          echo "BATT7_DONE"
