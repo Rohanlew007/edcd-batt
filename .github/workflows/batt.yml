@@ -6,24 +6,41 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: battery
-        env:
-          ECD_PW: ${{ secrets.ECD_PW }}
         run: |
           set -u
-          A=https://ecourtdate.us.auth0.com
           H1=https://api.ecourtdate.com
-          echo "=== signup connection probes ==="
-          for C in Username-Password-Authentication email ecdauth0 Default; do
-            echo "--- conn=$C"
-            curl -s --max-time 15 -X POST -H 'Content-Type: application/json' "$A/dbconnections/signup" -d "{\"client_id\":\"C5aRYUevyR9BDi1THXm1JhgE4PHxNK33\",\"email\":\"yasirsec21@gmail.com\",\"password\":\"$ECD_PW\",\"connection\":\"$C\"}" | head -c 300
-            echo
+          HE=https://us-east.ecourtdate.com
+          HA=https://app.ecourtdate.com
+          A=https://ecourtdate.us.auth0.com
+          echo "=== us-east host ==="
+          for p in / /health /v1/schedules /v1/users/current /oauth/ecdauth0 /logout; do
+            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 "$HE$p" || echo ERR)
+            echo "UE GET $p -> $code :: $(head -c 110 /tmp/b | tr '\n' ' ')"
             sleep 1
           done
-          echo "=== ROPG shape probe (wrong pw) ==="
-          curl -s --max-time 15 -X POST "$A/oauth/token" -H 'Content-Type: application/json' -d '{"grant_type":"password","client_id":"C5aRYUevyR9BDi1THXm1JhgE4PHxNK33","username":"yasirsec21@gmail.com","password":"definitely-wrong-probe","scope":"openid profile email"}' | head -c 300
+          echo "=== app host (SPA) ==="
+          for p in / /login /config.json /env.json /manifest.json /robots.txt; do
+            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 "$HA$p" || echo ERR)
+            echo "AP GET $p -> $code :: $(head -c 80 /tmp/b | tr '\n' ' ')"
+            sleep 1
+          done
+          echo "=== device flow probe ==="
+          curl -s --max-time 15 -X POST "$A/oauth/device/code" -H 'Content-Type: application/x-www-form-urlencoded' -d 'client_id=C5aRYUevyR9BDi1THXm1JhgE4PHxNK33&scope=openid profile email' | head -c 250
           echo
           sleep 1
-          echo "=== discovery ==="
-          curl -s --max-time 15 "$A/.well-known/openid-configuration" | head -c 700
-          echo
-          echo "BATT5_DONE"
+          echo "=== fake-bearer shape on live routes ==="
+          for p in /v1/users/current /v1/schedules /v1/locations; do
+            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 -H 'Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJwcm9iZSIsImV4cCI6OTk5OTk5OTk5OX0.fake-sig' "$H1$p" || echo ERR)
+            echo "FB GET $p -> $code :: $(head -c 130 /tmp/b | tr '\n' ' ')"
+            sleep 1
+          done
+          echo "=== id_token-shape probe ==="
+          code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 -H 'Authorization: Bearer probe-opaque-token-123' "$H1/v1/users/current" || echo ERR)
+          echo "OP GET /v1/users/current -> $code :: $(head -c 130 /tmp/b | tr '\n' ' ')"
+          echo "=== citations deeper ==="
+          for p in /api/health /v1/citations /citations /search /api/citations /v2/citations /v1/courts /v1/judges /health/detail /status; do
+            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 "https://api.citations.ecourtdate.com$p" || echo ERR)
+            echo "CT GET $p -> $code :: $(head -c 110 /tmp/b | tr '\n' ' ')"
+            sleep 1
+          done
+          echo "BATT6_DONE"
