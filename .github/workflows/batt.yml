@@ -9,11 +9,18 @@ jobs:
         run: |
           set -u
           H1=https://api.ecourtdate.com
-          echo "=== GET /oauth/ecdauth0 FULL HEADERS ==="
-          curl -s --max-time 20 -D /tmp/h1 -o /tmp/b1 "$H1/oauth/ecdauth0" -w 'STATUS=%{http_code}\n'
-          grep -viE '^(date|server|cf-|report-to|nel|alt-svc|content-type|content-length|strict|set-cookie: __cf|cache|x-content|x-frame|referrer|permissions|via|cf-cache)' /tmp/h1 | sed 's/=\(.[^;]\{6,\}\)/=<MASKED>/' | head -c 900; echo
-          echo "=== auth/user HEADERS (bogus state) ==="
-          curl -s --max-time 20 -X POST -D /tmp/h2 -o /tmp/b2 "$H1/auth/user?state=bogus123" -w 'STATUS=%{http_code}\n'
-          grep -viE '^(date|server|cf-|report-to|nel|alt-svc|content-type|content-length|strict|cache|x-content|x-frame|referrer|permissions|via|cf-cache)' /tmp/h2 | head -c 500; echo
-          head -c 100 /tmp/b2; echo
-          echo "PROBE_DONE"
+          UE=https://us-east.api.ecourtdate.com
+          ST=xQbi0PmTfFy62P3GdrzUtbeU4sfU925joWJw1Hvh
+          echo "=== A. auth/user + Origin, no CT (axios-style) canonical ==="
+          curl -s --max-time 20 -X POST -H 'Origin: https://app.ecourtdate.com' -H 'Referer: https://app.ecourtdate.com/login?state='"$ST" "$H1/auth/user?state=$ST" -o /tmp/ta.json -w 'STATUS=%{http_code}\n'
+          head -c 120 /tmp/ta.json; echo
+          echo "=== B. same on us-east ==="
+          curl -s --max-time 20 -X POST -H 'Origin: https://app.ecourtdate.com' -H 'Referer: https://app.ecourtdate.com/login?state='"$ST" "$UE/auth/user?state=$ST" -o /tmp/tb.json -w 'STATUS=%{http_code}\n'
+          head -c 120 /tmp/tb.json; echo
+          echo "=== C. redirect AGAIN (is state reusable?) ==="
+          curl -s --max-time 20 -o /dev/null -D /tmp/h -w 'STATUS=%{http_code}' "https://api.ecourtdate.com/oauth/ecdauth0/redirect?code=REUSED&state=$ST"
+          grep -i '^location:' /tmp/h | head -c 150; echo
+          echo "=== D. auth/user with XHR header ==="
+          curl -s --max-time 20 -X POST -H 'Origin: https://app.ecourtdate.com' -H 'X-Requested-With: XMLHttpRequest' -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0' "$H1/auth/user?state=$ST" -o /tmp/td.json -w 'STATUS=%{http_code}\n'
+          head -c 120 /tmp/td.json; echo
+          echo "RETRY19_DONE"
