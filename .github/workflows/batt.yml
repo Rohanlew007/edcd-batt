@@ -6,19 +6,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: battery
-        env:
-          ECD_CODE: ${{ secrets.ECD_CODE }}
         run: |
           set -u
+          HA=https://app.ecourtdate.com
           H1=https://api.ecourtdate.com
-          echo "=== server-side redirect exchange ==="
-          curl -s -i --max-time 20 -c /tmp/cj.txt "$H1/oauth/ecdauth0/redirect?code=$ECD_CODE&state=xXIZajGlc9cujXrSDns7zdvNHgdyWG4pkSeHA6ZH" -o /tmp/redir.txt -w 'STATUS=%{http_code}\n'
-          head -c 400 /tmp/redir.txt | grep -iE '^HTTP|^location|^content-type|^set-cookie' | sed 's/=\(....\)[^;]*/=\1***/'
-          echo "cookie names: $(grep -oE '^[^ ]+' /tmp/cj.txt | tr '\n' ' ')"
-          echo "=== battery with cookie jar ==="
-          for p in /v1/users/current /v1/schedules /v1/schedules/current /v1/schedules/ics /v1/schedules/total /v1/schedules/upcoming /v1/opens /v1/opens/total /v1/availabilities /v1/availabilities/days /v1/geolocations /v1/forms /v1/locations /v1/portals /v1/checkins /v1/events /v1/events/json /v1/contacts /v1/cases /v1/clients /v1/interpreters /v1/messages /v1/chats /v1/chatbots /v1/tasks /v1/documents /v1/posts /v1/subscriptions /v1/webhooks /v1/citations /v1/reports /v1/search /v1/judges /v1/flows /v1/lookups /v1/dashboards /v1/files /v1/calendars /v1/organizations /v1/roles /v1/settings /v1/supervisions; do
-            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 -b /tmp/cj.txt "$H1$p" || echo ERR)
-            echo "S GET $p -> $code :: $(head -c 160 /tmp/b | tr '\n' ' ')"
+          ST=xXIZajGlc9cujXrSDns7zdvNHgdyWG4pkSeHA6ZH
+          echo "=== follow app/login?state ==="
+          curl -s -i --max-time 20 -c /tmp/appjar.txt "$HA/login?state=$ST" -o /tmp/app.txt -w 'STATUS=%{http_code}\n'
+          grep -iE '^HTTP|^location|^content-type|^set-cookie' /tmp/app.txt | sed 's/=\(....\)[^;]*/=\1***/' | head -10
+          echo "cookie names: $(grep -oE '^[^# ]+' /tmp/appjar.txt | grep -v '^$' | tr '\n' ' ')"
+          echo "token-shaped in body: $(grep -coE '[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}' /tmp/app.txt || echo 0)"
+          echo "body head: $(head -c 200 /tmp/app.txt | tr '\n' ' ')"
+          echo "=== api battery with app cookie ==="
+          for p in /v1/users/current /v1/schedules /v1/locations /v1/clients /v1/settings /v1/roles; do
+            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 -b /tmp/appjar.txt "$H1$p" || echo ERR)
+            echo "S2 GET $p -> $code :: $(head -c 160 /tmp/b | tr '\n' ' ')"
             sleep 1
           done
-          echo "BATT10_DONE"
+          echo "BATT11_DONE"
