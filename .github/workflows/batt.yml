@@ -6,29 +6,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: battery
+        env:
+          ECD_CODE: ${{ secrets.ECD_CODE }}
         run: |
           set -u
-          HA=https://app.ecourtdate.com
-          HE=https://us-east.ecourtdate.com
-          echo "=== index HTML diff ==="
-          curl -s --compressed --max-time 15 "$HA/" -o /tmp/ha.html
-          curl -s --compressed --max-time 15 "$HE/" -o /tmp/he.html
-          echo "app / size: $(wc -c < /tmp/ha.html) | us-east / size: $(wc -c < /tmp/he.html)"
-          diff <(tr '>' '>\n' < /tmp/ha.html) <(tr '>' '>\n' < /tmp/he.html) | head -30
-          echo "=== script srcs app ==="
-          grep -oE '(src|href)="[^"]+\.(js|css)"' /tmp/ha.html | head -10
-          echo "=== script srcs us-east ==="
-          grep -oE '(src|href)="[^"]+\.(js|css)"' /tmp/he.html | head -10
-          echo "=== chunk exists cross-check ==="
-          APPCHUNK=$(grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' /tmp/ha.html | head -1)
-          UECHUNK=$(grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' /tmp/he.html | head -1)
-          echo "app chunk: $APPCHUNK | us-east chunk: $UECHUNK"
-          if [ -n "$APPCHUNK" ]; then
-            curl -s --compressed --max-time 20 -o /tmp/ach.js "$HA$APPCHUNK"; echo "app chunk sha: $(sha256sum /tmp/ach.js | cut -c1-16) size: $(wc -c < /tmp/ach.js)"
-          fi
-          if [ -n "$UECHUNK" ]; then
-            curl -s --compressed --max-time 20 -o /tmp/uec.js "$HE$UECHUNK"; echo "us-east chunk sha: $(sha256sum /tmp/uec.js | cut -c1-16) size: $(wc -c < /tmp/uec.js)"
-          fi
-          echo "=== us-east API config hints in chunk ==="
-          if [ -n "$UECHUNK" ]; then grep -oE '(api[a-z.-]*\.ecourtdate\.com|ecourtdate[a-z.-]*\.(com|io)|/v1/[a-z/_-]+)' /tmp/uec.js | sort -u | head -20; fi
-          echo "BATT7_DONE"
+          A=https://ecourtdate.us.auth0.com
+          H1=https://api.ecourtdate.com
+          echo "=== code exchange ==="
+          curl -s --max-time 20 -X POST "$A/oauth/token" -H 'Content-Type: application/json' -d "{\"grant_type\":\"authorization_code\",\"client_id\":\"C5aRYUevyR9BDi1THXm1JhgE4PHxNK33\",\"code\":\"$ECD_CODE\",\"redirect_uri\":\"https://console.ecourtdate.com/redirect\"}" -o /tmp/tok.json
+          AT=$(/usr/bin/python3 -Ic "import json;d=json.load(open('/tmp/tok.json'));print(d.get('access_token','EXFAIL:'+str(d.get('error'))+':'+str(d.get('error_description'))[:120])[:200])")
+          RT=$(/usr/bin/python3 -Ic "import json;print('RT_OK' if json.load(open('/tmp/tok.json')).get('refresh_token') else 'RT_NONE')")
+          echo "access_token: ${AT:0:12}...${AT: -6} (${#AT} chars) | $RT"
+          case "$AT" in EXFAIL*) echo "EXCHANGE FAILED — stopping"; exit 0;; esac
+          echo "=== authed battery ==="
+          for p in /v1/users/current /v1/schedules /v1/schedules/current /v1/schedules/ics /v1/schedules/total /v1/schedules/upcoming /v1/opens /v1/opens/total /v1/availabilities /v1/availabilities/days /v1/geolocations /v1/forms /v1/locations /v1/portals /v1/checkins /v1/events /v1/events/json /v1/contacts /v1/cases /v1/clients /v1/interpreters /v1/messages /v1/chats /v1/chatbots /v1/tasks /v1/documents /v1/posts /v1/subscriptions /v1/webhooks /v1/citations /v1/reports /v1/search /v1/judges /v1/flows /v1/lookups /v1/dashboards /v1/files /v1/calendars /v1/organizations /v1/roles /v1/settings /v1/supervisions; do
+            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 -H "Authorization: Bearer $AT" "$H1$p" || echo ERR)
+            echo "A GET $p -> $code :: $(head -c 160 /tmp/b | tr '\n' ' ')"
+            sleep 1
+          done
+          echo "=== authed POSTs ==="
+          for spec in "/v1/translator|{\"text\":\"court hearing\",\"target\":\"es\"}" "/v1/synthesize|{\"text\":\"court\"}" "/v1/search|{\"query\":\"a\"}"; do
+            p=${spec%%|*}; body=${spec#*|}
+            code=$(curl -s -o /tmp/b -w '%{http_code}' -X POST --max-time 15 -H 'Content-Type: application/json' -H "Authorization: Bearer $AT" -d "$body" "$H1$p" || echo ERR)
+            echo "A POST $p -> $code :: $(head -c 160 /tmp/b | tr '\n' ' ')"
+            sleep 1
+          done
+          echo "BATT8_DONE"
