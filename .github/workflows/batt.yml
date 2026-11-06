@@ -6,35 +6,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: battery
-        env:
-          ECD_CODE: ${{ secrets.ECD_CODE }}
         run: |
           set -u
-          UE=https://us-east.api.ecourtdate.com
-          ST=vTfX87Wb1fvxBFH6pmaz4CUbTTqcUxrQgtCLFFJF
-          echo "=== 1. redirect validate (capture Location) ==="
-          LOC=$(curl -s --max-time 20 -o /dev/null -D /tmp/h -w '%{http_code}' "$UE/oauth/ecdauth0/redirect?code=$ECD_CODE&state=$ST")
-          echo "STATUS=$LOC"
-          grep -i '^location:' /tmp/h | head -c 300; echo
-          S2=$(grep -i '^location:' /tmp/h | sed 's/.*[?&]state=\([A-Za-z0-9_-]*\).*/\1/' | tr -d '\r\n')
-          echo "S2_LEN=${#S2}"
-          echo "=== 2. auth/user with redirect-issued state ==="
-          curl -s --max-time 20 -X POST -H 'Content-Type: application/json' "$UE/auth/user?state=$S2" -o /tmp/tu.json -w 'STATUS=%{http_code}\n'
-          AT=$(/usr/bin/python3 -Ic "import json;d=json.load(open('/tmp/tu.json'));a=d.get('access_token','');print(a if a else 'FAIL:'+json.dumps(d)[:200]" 2>/dev/null || echo PARSE_ERR)
-          echo "AT_LEN=${#AT}"
-          case "$AT" in FAIL*|PARSE_ERR*|"")
-            echo "--- retry with ORIGINAL state ---"
-            curl -s --max-time 20 -X POST -H 'Content-Type: application/json' "$UE/auth/user?state=$ST" -o /tmp/tu2.json -w 'STATUS=%{http_code}\n'
-            AT=$(/usr/bin/python3 -Ic "import json;d=json.load(open('/tmp/tu2.json'));a=d.get('access_token','');print(a if a else 'FAIL:'+json.dumps(d)[:200]" 2>/dev/null || echo PARSE_ERR)
-            echo "AT_LEN2=${#AT}"
-            case "$AT" in FAIL*|PARSE_ERR*|"") head -c 200 /tmp/tu2.json | sed 's/[A-Za-z0-9_-]\{25,\}/T/g'; echo; exit 0;; esac
-          esac
-          echo "=== 3. AUTHED BATTERY us-east.api ==="
-          for p in /v1/users/current /v1/users /v1/agencies /v1/agency /v1/schedules /v1/schedules/current /v1/schedules/upcoming /v1/schedules/ics /v1/schedules/total /v1/schedules/random /v1/opens /v1/opens/total /v1/availabilities /v1/availabilities/days /v1/geolocations /v1/forms /v1/locations /v1/portals /v1/checkins /v1/events /v1/events/json /v1/contacts /v1/cases /v1/clients /v1/interpreters /v1/messages /v1/chats /v1/chatbots /v1/tasks /v1/documents /v1/posts /v1/subscriptions /v1/webhooks /v1/citations /v1/reports /v1/search /v1/judges /v1/flows /v1/lookups /v1/dashboards /v1/files /v1/calendars /v1/organizations /v1/roles /v1/settings /v1/supervisions /users/current /users /clients /cases /locations /messages /settings /roles /product_changes; do
-            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 -H "Authorization: Bearer $AT" "$UE$p" || echo ERR)
-            echo "U GET $p -> $code :: $(head -c 170 /tmp/b | tr '\n' ' ')"
-            sleep 1
-          done
-          echo "=== 4. TOKEN AUDIENCE CHECK ==="
-          /usr/bin/python3 -Ic "import json,base64;d=json.load(open('/tmp/tu.json'));a=d.get('access_token','');p=(a.split('.')[1]);p+='='*(-len(p)%4);c=json.loads(base64.urlsafe_b64decode(p)) if a and a.count('.')==2 else {};c.pop('sub',None);print('CLAIMS:',json.dumps(c)[:400])"
-          echo "BATT15_DONE"
+          H1=https://api.ecourtdate.com
+          echo "=== GET canonical /oauth/ecdauth0 ==="
+          curl -s --max-time 20 "$H1/oauth/ecdauth0" -o /tmp/au.json -w 'STATUS=%{http_code}\n'
+          echo "URLBODY_BEGIN"
+          head -c 1200 /tmp/au.json
+          echo
+          echo "URLBODY_END"
+          echo "BATT16A_DONE"
