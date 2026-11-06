@@ -5,18 +5,13 @@ jobs:
   b:
     runs-on: ubuntu-latest
     steps:
-      - name: battery
+      - name: get auth url
         run: |
           set -u
           H1=https://api.ecourtdate.com
-          echo "=== GET /oauth/ecdauth0 full headers ==="
-          curl -s -i --max-time 15 -c /tmp/cj.txt "$H1/oauth/ecdauth0" | head -c 1200
+          curl -s --max-time 15 "$H1/oauth/ecdauth0" -o /tmp/auth.json
+          echo "URLBODY_BEGIN"
+          cat /tmp/auth.json
           echo
-          echo "=== cookie jar ==="
-          cat /tmp/cj.txt
-          echo "=== save authorize URL for browser ==="
-          /usr/bin/python3 -Ic "import json;print(json.load(open('/dev/stdin'))" < /dev/null 2>/dev/null || true
-          curl -s --max-time 15 -c /tmp/cj.txt "$H1/oauth/ecdauth0" -o /tmp/auth.json
-          /usr/bin/cp /tmp/auth.json /tmp/authorize_url.json
-          echo "AUTH_URL_SAVED"
-          echo "BATT9_DONE"
+          echo "URLBODY_END"
+          echo "BATT9B_DONE"
