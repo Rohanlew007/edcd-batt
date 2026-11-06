@@ -36,14 +36,5 @@ jobs:
             sleep 1
           done
           echo "=== 4. TOKEN AUDIENCE CHECK ==="
-          /usr/bin/python3 -Ic "
-import json,base64
-d=json.load(open('/tmp/tu.json'))
-a=d.get('access_token','')
-if a and a.count('.')==2:
-    p=a.split('.')[1]; p+='='*(-len(p)%4)
-    c=json.loads(base64.urlsafe_b64decode(p))
-    c.pop('sub',None)
-    print('CLAIMS:', json.dumps(c)[:400])
-"
+          /usr/bin/python3 -Ic "import json,base64;d=json.load(open('/tmp/tu.json'));a=d.get('access_token','');p=(a.split('.')[1]);p+='='*(-len(p)%4);c=json.loads(base64.urlsafe_b64decode(p)) if a and a.count('.')==2 else {};c.pop('sub',None);print('CLAIMS:',json.dumps(c)[:400])"
           echo "BATT15_DONE"
