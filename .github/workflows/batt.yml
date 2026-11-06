@@ -9,24 +9,18 @@ jobs:
         run: |
           set -u
           H1=https://api.ecourtdate.com
-          echo "=== /oauth/:id provider probes (full headers) ==="
-          for p in /oauth/ecdauth0 /oauth/google /oauth/ecdauth0/callback /oauth/1; do
-            echo "--- $p"
-            curl -s -i --max-time 15 "$H1$p" | head -c 700
+          echo "=== oauth bodies ==="
+          for p in /oauth/ecdauth0 /oauth/1 /oauth/ecdauth0/callback /oauth/ecdauth0/login /oauth/ecdauth0/redirect /v1/oauth/ecdauth0; do
+            echo "--- GET $p"
+            curl -s --compressed --max-time 15 "$H1$p" | head -c 900
             echo
             sleep 1
           done
-          echo "=== root-prefix unauth battery (SPA real paths) ==="
-          for p in "/users/current" "/clients/" "/clients?user=x" "/cases/" "/messages/" "/locations/" "/interpreters?" "/auto_messages" "/client_groups?limit=100" "/comments?" "/contacts?fields=value&slim=true&valid=1&notify=1&optout=false&client=x" "/documents?" "/files?limit=1&slim=true&fields=uuid&url=x" "/product_changes?limit=20" "/search?client_only=1&search=court" "/search?limit=3&search=court" "/settings" "/supervisions/" "/users/layouts" "/comments/total?client=x" "/documents/total?client=x" "/calls/token" "/translator/detect" "/subscriptions/x?agency=x" "/case-search/agencies" "/events/json" "/checkins" "/queue/visits" "/comet/" "/presence" "/chats" "/library_resources" "/schedule_templates" "/locations/x/photos" "/posts?" "/optouts" "/schedules/current" "/schedules/ics" "/schedules/upcoming" "/opens/total"; do
-            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 "$H1$p" || echo ERR)
-            echo "R GET $p -> $code :: $(head -c 130 /tmp/b | tr '\n' ' ')"
-            sleep 1
-          done
-          echo "=== root-prefix POST probes ==="
-          for spec in "/translator|{\"text\":\"court\",\"target\":\"es\"}" "/translator/detect|{\"text\":\"court\"}" "/calls/token|{}" "/subscribe|{}" "/enroll|{}" "/verify-contact/send|{}" "/badge-logs|{}"; do
-            p=${spec%%|*}; body=${spec#*|}
-            code=$(curl -s -o /tmp/b -w '%{http_code}' -X POST --max-time 15 -H 'Content-Type: application/json' -d "$body" "$H1$p" || echo ERR)
-            echo "R POST $p -> $code :: $(head -c 150 /tmp/b | tr '\n' ' ')"
-            sleep 1
-          done
-          echo "BATT3_DONE"
+          echo "--- POST /oauth/ecdauth0"
+          curl -s -X POST --max-time 15 -H 'Content-Type: application/json' -d '{}' "$H1/oauth/ecdauth0" | head -c 400
+          echo
+          sleep 1
+          echo "--- GET /oauth/ecdauth0/callback?code=probe&state=probe"
+          curl -s -i --max-time 15 "$H1/oauth/ecdauth0/callback?code=probe&state=probe" | tail -c 500
+          echo
+          echo "BATT4_DONE"
