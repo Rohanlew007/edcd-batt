@@ -8,30 +8,44 @@ jobs:
       - name: battery
         run: |
           set -u
-          echo "EGRESS_IP=$(curl -s --max-time 10 https://api.ipify.org || echo ERR)"
           H1=https://api.ecourtdate.com
-          PATHS="/ /v1 /health /docs /openapi.json /v1/schedules /v1/schedules/current /v1/schedules/ics /v1/schedules/random /v1/schedules/total /v1/schedules/upcoming /v1/opens/total /v1/opens /v1/availabilities /v1/availabilities/days /v1/geolocations /v1/resources /v1/forms /v1/locations /v1/portals /v1/schedule_templates /v1/library_resources /v1/library_resources/w/test /v1/badge-logs /v1/checkins /v1/checkins/test/checkout /v1/events /v1/events/json /v1/users/current /oauth/test /v1/contacts /v1/cases /v1/clients /v1/interpreters /v1/messages /v1/chats /v1/chatbots /v1/tasks /v1/documents /v1/photos /v1/posts /v1/optouts /v1/enroll /v1/subscriptions /v1/webhooks /v1/api-keys /v1/invites /v1/audit-logs /v1/citations /v1/exports /v1/reports /v1/search /v1/ips /v1/translator /v1/synthesize /v1/presign /v1/saved-searches"
-          for p in $PATHS; do
+          H2=https://api.citations.ecourtdate.com
+          H3=https://ecs.ecourtdate.com
+          echo "=== citations (FastAPI) discovery ==="
+          for p in / /docs /openapi.json /redoc /api /api/v1 /health /healthz /docs/oauth2-redirect /v1 /v1/openapi.json; do
+            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 "$H2$p" || echo ERR)
+            echo "CIT GET $p -> $code :: $(head -c 120 /tmp/b | tr '\n' ' ')"
+            sleep 1
+          done
+          echo "=== main API more paths ==="
+          for p in /v1/courts /v1/judges /v1/reminders /v1/notifications /v1/flows /v1/automations /v1/lookups /v1/ip-lookups /v1/templates /v1/conversations /v1/embeddings /v1/dashboards /v1/files /v1/calendars /v1/organizations /v1/devices /v1/sessions /v1/roles /v1/permissions /v1/settings /v1/me /v1/version /v1/queue /v1/realtime /v1/presence /v1/supervisions /v1/verify-contact/send /v1/keys/test/revokeTokens /v1/case-search/agencies /v1/schedules/ics/upcoming /v1/schedules/upcoming/ics /v1/schedules/current/ics; do
             code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 "$H1$p" || echo ERR)
-            echo "GET $p -> $code :: $(head -c 100 /tmp/b | tr '\n' ' ')"
+            echo "M GET $p -> $code :: $(head -c 100 /tmp/b | tr '\n' ' ')"
             sleep 1
           done
-          echo "== OPTIONS =="
-          for p in /v1/schedules /v1/locations /v1/enroll; do
-            code=$(curl -s -o /tmp/b -w '%{http_code}' -X OPTIONS --max-time 15 -H "Origin: https://app.ecourtdate.com" -H "Access-Control-Request-Method: POST" "$H1$p" || echo ERR)
-            echo "OPT $p -> $code :: $(grep -iE '^allow|access-control' /tmp/b | head -c 200 | tr '\n' ' ')"
+          echo "=== POST-only routes ==="
+          for spec in "/v1/translator|{\"text\":\"court\"}" "/v1/translator|{}" "/v1/synthesize|{\"text\":\"court\"}" "/v1/synthesize|{}" "/oauth/test|{}" "/v1/chats|{}" "/v1/search|{\"query\":\"court\"}"; do
+            p=${spec%%|*}; body=${spec#*|}
+            code=$(curl -s -o /tmp/b -w '%{http_code}' -X POST --max-time 15 -H 'Content-Type: application/json' -d "$body" "$H1$p" || echo ERR)
+            echo "M POST $p $body -> $code :: $(head -c 150 /tmp/b | tr '\n' ' ')"
             sleep 1
           done
-          echo "== POST probes =="
-          for p in /oauth/refresh /v1/oauth/refresh; do
-            code=$(curl -s -o /tmp/b -w '%{http_code}' -X POST --max-time 15 -H 'Content-Type: application/json' -d '{"refresh_token":"probe-x"}' "$H1$p" || echo ERR)
-            echo "POST $p -> $code :: $(head -c 150 /tmp/b | tr '\n' ' ')"
+          echo "=== headers on key 401 + 405 ==="
+          curl -s -i --max-time 15 "$H1/v1/users/current" | head -c 500
+          echo
+          sleep 1
+          curl -s -i -X OPTIONS --max-time 15 -H "Origin: https://app.ecourtdate.com" -H "Access-Control-Request-Method: POST" "$H1/v1/translator" | head -c 500
+          echo
+          sleep 1
+          echo "=== ecs live ==="
+          code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 "$H3/" || echo ERR)
+          echo "ECS GET / -> $code"
+          grep -oE '(src|href)="[^"]+"' /tmp/b | head -20
+          CHUNK=$(grep -oE '/assets/[a-zA-Z0-9._-]+\.js' /tmp/b | head -1)
+          echo "ECS chunk: $CHUNK"
+          for p in /robots.txt /sitemap.xml /manifest.json /api/health /api/locations /api/schedules /api/events "$CHUNK"; do
+            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 "$H3$p" || echo ERR)
+            echo "ECS GET $p -> $code :: $(head -c 100 /tmp/b | tr '\n' ' ')"
             sleep 1
           done
-          echo "== siblings =="
-          for H in https://api.citations.ecourtdate.com https://portals.ecourtdate.com https://ecs.ecourtdate.com; do
-            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 "$H/" || echo ERR)
-            echo "ROOT $H -> $code :: $(head -c 120 /tmp/b | tr '\n' ' ')"
-            sleep 1
-          done
-          echo "BATT_DONE"
+          echo "BATT2_DONE"
