@@ -10,7 +10,7 @@ jobs:
           set -u
           UE=https://us-east.api.ecourtdate.com
           echo "=== GET /oauth/ecdauth0 ==="
-          curl -s --max-time 20 -H 'Content-Type: application/json' -X POST "$UE/oauth/ecdauth0" -o /tmp/au.json -w 'STATUS=%{http_code}\n'
+          curl -s --max-time 20 "$UE/oauth/ecdauth0" -o /tmp/au.json -w 'STATUS=%{http_code}\n'
           echo "URLBODY_BEGIN"
           head -c 1200 /tmp/au.json
           echo
