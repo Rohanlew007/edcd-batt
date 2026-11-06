@@ -7,23 +7,65 @@ jobs:
     steps:
       - name: battery
         run: |
-          set +e
+          set -u
           H1=https://api.ecourtdate.com
-          UE=https://us-east.api.ecourtdate.com
-          echo "=== A. GET $H1/login body ==="
-          curl -s --max-time 15 -D /tmp/ha "$H1/login" -o /tmp/ba -w 'STATUS=%{http_code}\n'
-          head -c 300 /tmp/ba; echo
-          grep -ci 'set-cookie' /tmp/ha
-          echo "=== B. GET $UE/login body ==="
-          curl -s --max-time 15 -D /tmp/hb "$UE/login" -o /tmp/bb -w 'STATUS=%{http_code}\n'
-          head -c 300 /tmp/bb; echo
-          grep -i 'set-cookie' /tmp/hb | sed 's/=\(.[^;]\{4,\}\)/=<M>/Ig' | head -c 200; echo
-          echo "=== C. GET $UE/login?signin=demo ==="
-          curl -s --max-time 15 -c /tmp/jc -D /tmp/hc "$UE/login?signin=demo" -o /tmp/bc -w 'STATUS=%{http_code}\n'
-          head -c 300 /tmp/bc; echo
-          grep -i 'set-cookie' /tmp/hc | sed 's/=\(.[^;]\{4,\}\)/=<M>/Ig' | head -c 200; echo
-          echo "=== D. GET $UE/oauth/ecdauth0 body (for comparison) ==="
-          curl -s --max-time 15 -D /tmp/hd "$UE/oauth/ecdauth0" -o /tmp/bd -w 'STATUS=%{http_code}\n'
-          head -c 200 /tmp/bd; echo
-          grep -i 'set-cookie' /tmp/hd | sed 's/=\(.[^;]\{4,\}\)/=<M>/Ig' | head -c 200; echo
-          echo "PROBE24_DONE"
+          UA='Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0'
+          echo "=== IP ==="
+          curl -s --max-time 10 https://api.ipify.org; echo
+          echo "=== GET /v1/health baseline ==="
+          curl -s --max-time 15 -H "User-Agent: $UA" -H 'Accept: application/json' "$H1/v1/health" | head -c 200; echo
+          echo "=== POST-shape probes (validation-before-auth oracle) ==="
+          pp() {
+            code=$(curl -s --max-time 15 -o /tmp/pp.out -w '%{http_code}' -X POST -H "User-Agent: $UA" -H 'Accept: application/json' -H 'X-Requested-With: XMLHttpRequest' -H 'Content-Type: application/json' ${2:+-d "$2"} "$H1$1" || echo ERR)
+            echo "P POST $1 -> $code :: $(head -c 150 /tmp/pp.out | tr '\n' ' ')"
+            sleep 1
+          }
+          pp /v1/generator '{}'
+          pp /v1/preview '{}'
+          pp /v1/referrals '{}'
+          pp /v1/calls/token '{}'
+          pp /v1/agency_phones/phone/calls '{}'
+          pp /v1/otps '{}'
+          pp /v1/queue/visits '{}'
+          pp /v1/generator '{"template":"[Date]"}'
+          pp /v1/preview '{"template":"[Date]"}'
+          echo "=== queue kiosk Idempotency-Key probe ==="
+          code=$(curl -s --max-time 15 -o /tmp/qv.out -w '%{http_code}' -X POST -H "User-Agent: $UA" -H 'Content-Type: application/json' -H 'Idempotency-Key: bb-test-001' -d '{"line":"bb","name":"bb"}' "$H1/v1/queue/visits" || echo ERR)
+          echo "P POST /v1/queue/visits (idem) -> $code :: $(head -c 150 /tmp/qv.out | tr '\n' ' ')"
+          sleep 1
+          echo "=== resume sweep (stale-000 + untested) ==="
+          while IFS= read -r p; do
+            [ -z "$p" ] && continue
+            code=$(curl -s --max-time 15 -o /tmp/rs.out -w '%{http_code}' -H "User-Agent: $UA" -H 'Accept: application/json' -H 'X-Requested-With: XMLHttpRequest' "$H1$p" || echo ERR)
+            echo "R GET $p -> $code :: $(head -c 80 /tmp/rs.out | tr '\n' ' ')"
+            sleep 1
+          done <<'EOP'
+/v1/checkin
+/v1/checkins
+/v1/report_issue
+/v1/reports
+/v1/research
+/v1/restore
+/v1/roles
+/v1/sample_templates
+/v1/schedules
+/v1/search
+/v1/sent_files
+/v1/settings
+/v1/setup
+/v1/statuses
+/v1/submissions
+/v1/submissions/total
+/v1/subscribe
+/v1/supervisions
+/v1/sync
+/v1/tasks
+/v1/tickets
+/v1/total
+/v1/training
+/v1/translator
+/v1/translator/detect
+/v1/unreachables
+/v1/auto_docs/x/preview
+EOP
+          echo "BATTJ_DONE"
