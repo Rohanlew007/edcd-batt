@@ -14,4 +14,4 @@ jobs:
           head -c 1200 /tmp/au.json
           echo
           echo "URLBODY_END"
-          echo "BATT18A_DONE"
+          echo "BATT18A2_DONE"
