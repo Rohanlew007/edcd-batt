@@ -9,24 +9,21 @@ jobs:
         run: |
           set -u
           ST=xXIZajGlc9cujXrSDns7zdvNHgdyWG4pkSeHA6ZH
-          UE=https://us-east.api.ecourtdate.com
-          H1=https://api.ecourtdate.com
-          echo "=== POST auth/user?state ==="
-          curl -s --max-time 20 -X POST -H 'Content-Type: application/json' "$UE/auth/user?state=$ST" -o /tmp/tu.json -w 'STATUS=%{http_code}\n'
-          AT=$(/usr/bin/python3 -Ic "import json;d=json.load(open('/tmp/tu.json'));print(d.get('access_token','')[:4000] or 'FAIL:'+json.dumps(d)[:200])" 2>/dev/null || echo PARSE_ERR)
-          RT=$(/usr/bin/python3 -Ic "import json;print('RT_OK' if json.load(open('/tmp/tu.json')).get('refresh_token') else 'RT_NONE')" 2>/dev/null || echo '?')
-          echo "AT_LEN=${#AT} | $RT"
-          case "$AT" in FAIL*|PARSE_ERR*) cat /tmp/tu.json | head -c 250; echo; exit 0;; esac
-          echo "=== AUTHED BATTERY us-east.api (app real API) ==="
-          for p in /v1/users/current /v1/users /v1/agencies /v1/agency /v1/schedules /v1/schedules/current /v1/schedules/upcoming /v1/schedules/ics /v1/schedules/total /v1/opens /v1/opens/total /v1/availabilities /v1/availabilities/days /v1/geolocations /v1/forms /v1/locations /v1/portals /v1/checkins /v1/events /v1/events/json /v1/contacts /v1/cases /v1/clients /v1/interpreters /v1/messages /v1/chats /v1/chatbots /v1/tasks /v1/documents /v1/posts /v1/subscriptions /v1/webhooks /v1/citations /v1/reports /v1/search /v1/judges /v1/flows /v1/lookups /v1/dashboards /v1/files /v1/calendars /v1/organizations /v1/roles /v1/settings /v1/supervisions /users/current /users /clients /cases /locations /messages /settings; do
-            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 -H "Authorization: Bearer $AT" "$UE$p" || echo ERR)
-            echo "U GET $p -> $code :: $(head -c 170 /tmp/b | tr '\n' ' ')"
-            sleep 1
-          done
-          echo "=== same-token battery on api.ecourtdate.com ==="
-          for p in /v1/users/current /v1/schedules /v1/locations /v1/clients; do
-            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 -H "Authorization: Bearer $AT" "$H1$p" || echo ERR)
-            echo "X GET $p -> $code :: $(head -c 170 /tmp/b | tr '\n' ' ')"
-            sleep 1
-          done
-          echo "BATT12_DONE"
+          echo "=== auth/user on canonical ==="
+          curl -s --max-time 15 -X POST "https://api.ecourtdate.com/auth/user?state=$ST" -o /tmp/a.json -w 'STATUS=%{http_code}\n'
+          head -c 200 /tmp/a.json | sed 's/[A-Za-z0-9_-]\{25,\}/TOKEN/g'
+          echo
+          sleep 1
+          echo "=== fresh GET /oauth/ecdauth0 on us-east.api ==="
+          curl -s --max-time 15 "https://us-east.api.ecourtdate.com/oauth/ecdauth0" -o /tmp/b.json -w 'STATUS=%{http_code}\n'
+          echo "URLBODY_BEGIN"
+          cat /tmp/b.json | sed 's|\\/|/|g'
+          echo
+          echo "URLBODY_END"
+          echo "=== fresh GET /oauth/ecdauth0 on canonical (for compare) ==="
+          curl -s --max-time 15 "https://api.ecourtdate.com/oauth/ecdauth0" -o /tmp/c.json -w 'STATUS=%{http_code}\n'
+          echo "CURLBODY_BEGIN"
+          cat /tmp/c.json | sed 's|\\/|/|g'
+          echo
+          echo "CURLBODY_END"
+          echo "BATT13_DONE"
