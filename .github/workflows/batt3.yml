@@ -1,0 +1,40 @@
+name: batt3
+on:
+  workflow_dispatch:
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - name: subdomain-pass
+        run: |
+          set -u
+          UA='Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0'
+          echo "=== IP ==="
+          curl -s --max-time 10 https://api.ipify.org; echo
+          HOSTS='oauth.ecourtdate.com domains.ecourtdate.com legal.ecourtdate.com partners.ecourtdate.com jobs.ecourtdate.com texas.ecourtdate.com status.ecourtdate.com cdn.ecourtdate.com'
+          for h in $HOSTS; do
+            code=$(curl -s --max-time 15 -D /tmp/sh -o /tmp/sb.out -w '%{http_code}' -H "User-Agent: $UA" "https://$h/" || echo ERR)
+            srv=$(grep -iE '^(server|x-powered-by|x-served-by|cf-ray)' /tmp/sh | tr -d '\r' | head -3 | tr '\n' ' ')
+            loc=$(grep -i '^location:' /tmp/sh | tr -d '\r' | head -1)
+            echo "S https://$h/ -> $code $srv $loc :: $(head -c 100 /tmp/sb.out | tr -d '\n' ' ')"
+            sleep 1
+          done
+          echo "=== robots on the interesting ones ==="
+          for h in oauth.ecourtdate.com domains.ecourtdate.com legal.ecourtdate.com partners.ecourtdate.com jobs.ecourtdate.com texas.ecourtdate.com; do
+            code=$(curl -s --max-time 15 -o /tmp/rb.out -w '%{http_code}' -H "User-Agent: $UA" "https://$h/robots.txt" || echo ERR)
+            echo "R https://$h/robots.txt -> $code :: $(head -c 120 /tmp/rb.out | tr -d '\n' ' ')"
+            sleep 1
+          done
+          echo "=== warrants docs host sitemap+llms ==="
+          for u in https://docs.warrants.ecourtdate.com/sitemap.xml https://docs.warrants.ecourtdate.com/llms.txt; do
+            code=$(curl -s --max-time 15 -o /tmp/db.out -w '%{http_code}' -H "User-Agent: $UA" "$u" || echo ERR)
+            echo "D $u -> $code :: $(head -c 150 /tmp/db.out | tr -d '\n' ' ')"
+            sleep 1
+          done
+          echo "=== api.warrants verb-gap on branding (POST/PUT) ==="
+          for v in POST PUT; do
+            code=$(curl -s --max-time 15 -o /tmp/wb2.out -w '%{http_code}' -X $v -H 'Content-Type: application/json' -d '{}' -H "User-Agent: $UA" "https://api.warrants.ecourtdate.com/v1/public/branding/51d3c8a4-9e2b-4d17-a6f0-3b8c5e1f7d29" || echo ERR)
+            echo "W $v branding -> $code :: $(head -c 80 /tmp/wb2.out | tr -d '\n' ' ')"
+            sleep 1
+          done
+          echo "BATTJ3_DONE"
