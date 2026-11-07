@@ -1,0 +1,58 @@
+name: batt7
+on:
+  workflow_dispatch:
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - name: header-auth-cors
+        run: |
+          set -u
+          UA='Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0'
+          H1=https://api.ecourtdate.com
+          W=https://api.warrants.ecourtdate.com
+          echo "=== IP ==="
+          curl -s --max-time 10 https://api.ipify.org; echo
+          echo "=== O. identity-assertion headers on 401 wall ==="
+          oh() {
+            code=$(curl -s --max-time 15 -o /tmp/o.out -w '%{http_code}' -H "User-Agent: $UA" -H 'Accept: application/json' "$@" "$1" || echo ERR)
+            echo "O $2 -> $code :: $(head -c 60 /tmp/o.out | tr -d '\n')"
+            sleep 1
+          }
+          oh "$H1/v1/schedules" "baseline-no-header"
+          for hd in "X-Forwarded-User: admin" "X-WEBAUTH-USER: admin" "X-Auth-Request-User: admin" "X-Consumer-Username: admin" "X-User-Id: 1" "X-User: admin" "X-Email: admin@ecourtdate.com" "Remote-User: admin" "X-Forwarded-Email: admin@ecourtdate.com"; do
+            code=$(curl -s --max-time 15 -o /tmp/o.out -w '%{http_code}' -H "User-Agent: $UA" -H 'Accept: application/json' -H "$hd" "$H1/v1/schedules" || echo ERR)
+            echo "O $hd -> $code :: $(head -c 60 /tmp/o.out | tr -d '\n')"
+            sleep 1
+          done
+          echo "=== P. underscore twins ==="
+          for hd in "X_Forwarded_User: admin" "X forwarded_user: admin" "X_WebAuth_User: admin"; do
+            code=$(curl -s --max-time 15 -o /tmp/o.out -w '%{http_code}' -H "User-Agent: $UA" -H 'Accept: application/json' -H "$hd" "$H1/v1/schedules" || echo ERR)
+            echo "P [$hd] -> $code :: $(head -c 60 /tmp/o.out | tr -d '\n')"
+            sleep 1
+          done
+          echo "=== Q. routing headers (path assertion) ==="
+          for hd in "X-Original-URL: /v1/schedules" "X-Rewrite-URL: /v1/schedules" "X-Forwarded-Uri: /v1/schedules" "X-Forwarded-Prefix: /v1"; do
+            code=$(curl -s --max-time 15 -o /tmp/o.out -w '%{http_code}' -H "User-Agent: $UA" -H 'Accept: application/json' -H "$hd" "$H1/healthz" || echo ERR)
+            echo "Q $hd on /healthz -> $code :: $(head -c 60 /tmp/o.out | tr -d '\n')"
+            sleep 1
+          done
+          echo "=== R. CORS posture on API hosts ==="
+          for org in "https://evil.example.com" "https://app.ecourtdate.com" "null"; do
+            code=$(curl -s --max-time 15 -D /tmp/rh -o /dev/null -w '%{http_code}' -H "User-Agent: $UA" -H "Origin: $org" "$H1/v1/schedules" || echo ERR)
+            acao=$(grep -i '^access-control-allow-origin' /tmp/rh | tr -d '\r' | head -1)
+            acac=$(grep -i '^access-control-allow-credentials' /tmp/rh | tr -d '\r' | head -1)
+            echo "R GET /v1/schedules Origin=$org -> $code ACAO=${acao:-none} ACAC=${acac:-none}"
+            sleep 1
+          done
+          code=$(curl -s --max-time 15 -X OPTIONS -D /tmp/rh -o /dev/null -w '%{http_code}' -H "User-Agent: $UA" -H "Origin: https://evil.example.com" -H 'Access-Control-Request-Method: GET' -H 'Access-Control-Request-Headers: authorization' "$H1/v1/schedules" || echo ERR)
+          acao=$(grep -i '^access-control-allow-origin' /tmp/rh | tr -d '\r' | head -1)
+          echo "R OPTIONS preflight evil -> $code ACAO=${acao:-none}"
+          sleep 1
+          for org in "https://evil.example.com" "https://app.ecourtdate.com"; do
+            code=$(curl -s --max-time 15 -D /tmp/rh -o /dev/null -w '%{http_code}' -H "User-Agent: $UA" -H "Origin: $org" "$W/v1/settings/public/ew-2026-999999-zzzzzz" || echo ERR)
+            acao=$(grep -i '^access-control-allow-origin' /tmp/rh | tr -d '\r' | head -1)
+            echo "R warrants Origin=$org -> $code ACAO=${acao:-none}"
+            sleep 1
+          done
+          echo "BATTJ7_DONE"
