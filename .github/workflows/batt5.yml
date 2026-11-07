@@ -1,0 +1,50 @@
+name: batt5
+on:
+  workflow_dispatch:
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - name: regional-billing-bundles
+        run: |
+          set -u
+          UA='Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0'
+          echo "=== IP ==="
+          curl -s --max-time 10 https://api.ipify.org; echo
+          for H in oauth.ecourtdate.com domains.ecourtdate.com us-east.ecourtdate.com us-west.ecourtdate.com us-south.ecourtdate.com us-texas.ecourtdate.com billing.ecourtdate.com www.billing.ecourtdate.com; do
+            echo "===== HOST $H ====="
+            code=$(curl -s --max-time 15 -c /tmp/c_$H.txt -o /tmp/idx_$H.html -w '%{http_code}' -H "User-Agent: $UA" -L "https://$H/" || echo ERR)
+            echo "GET / -> $code bytes=$(wc -c < /tmp/idx_$H.html)"
+            sleep 1
+            grep -oE '(src|href)="[^"]*\.(js|mjs)[^"]*"' /tmp/idx_$H.html | sed 's/.*="//;s/"$//' | sort -u | head -6 > /tmp/js_$H.txt
+            echo "JS links: $(wc -l < /tmp/js_$H.txt)"
+            while IFS= read -r j; do
+              case "$j" in /*) u="https://$H$j";; http*) u="$j";; *) u="https://$H/$j";; esac
+              jc=$(curl -s --max-time 15 -o /tmp/b.js -w '%{http_code}' -H "User-Agent: $UA" "$u" || echo ERR)
+              echo "  JS $u -> $jc bytes=$(wc -c < /tmp/b.js)"
+              if [ "$jc" = "200" ]; then
+                sm=$(tail -c 300 /tmp/b.js | grep -oE 'sourceMappingURL=[^ *]*' | head -1)
+                echo "    sourcemap: ${sm:-none}"
+                echo "    api-paths: $(grep -oE '"?/(v1|api)/[a-z0-9_/-]+' /tmp/b.js | sort -u | head -12 | tr '\n' ' ' | cut -c1-400)"
+                echo "    oauth/clients: $(grep -oE '[a-zA-Z0-9]{32}' /tmp/b.js | sort -u | head -4 | tr '\n' ' ')"
+                echo "    hosts: $(grep -oE 'https://[a-z0-9.-]+ecourtdate[a-z.]*' /tmp/b.js | sort -u | head -8 | tr '\n' ' ' | cut -c1-300)"
+                echo "    secrets: $(grep -coE 'AIza|sk_live|pk_live|xox[bp]-|AKIA[0-9A-Z]{16}' /tmp/b.js || true)"
+              fi
+              sleep 1
+            done < /tmp/js_$H.txt
+            rm -f /tmp/b.js
+          done
+          echo "=== I. docs.warrants llms.txt full fetch ==="
+          curl -s --max-time 15 -o /tmp/llms.txt -H "User-Agent: $UA" https://docs.warrants.ecourtdate.com/llms.txt || true
+          echo "llms bytes=$(wc -c < /tmp/llms.txt)"
+          echo "--- llms endpoint/section lines ---"
+          grep -oE '(/[a-z0-9-]+){2,}|GET|POST|PUT|DELETE|PATCH' /tmp/llms.txt | sort | uniq -c | sort -rn | head -12
+          grep -iE 'public|webhook|token|key|admin|internal' /tmp/llms.txt | head -8
+          echo "=== J. oauth + domains title/fingerprint quick ==="
+          for H in oauth.ecourtdate.com domains.ecourtdate.com; do
+            t=$(grep -oE '<title>[^<]*</title>' /tmp/idx_$H.html | head -1)
+            gen=$(grep -oE '<meta name="generator" content="[^"]*"' /tmp/idx_$H.html | head -1)
+            scr=$(grep -coE '<script' /tmp/idx_$H.html || true)
+            echo "J $H title=$t $gen scripts=$scr"
+          done
+          echo "BATTJ5_DONE"
