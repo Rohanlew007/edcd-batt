@@ -34,38 +34,10 @@ jobs:
           echo "P POST /v1/queue/visits (idem) -> $code :: $(head -c 150 /tmp/qv.out | tr '\n' ' ')"
           sleep 1
           echo "=== resume sweep (stale-000 + untested) ==="
-          while IFS= read -r p; do
-            [ -z "$p" ] && continue
+          PATHS='/v1/checkin /v1/checkins /v1/report_issue /v1/reports /v1/research /v1/restore /v1/roles /v1/sample_templates /v1/schedules /v1/search /v1/sent_files /v1/settings /v1/setup /v1/statuses /v1/submissions /v1/submissions/total /v1/subscribe /v1/supervisions /v1/sync /v1/tasks /v1/tickets /v1/total /v1/training /v1/translator /v1/translator/detect /v1/unreachables /v1/auto_docs/x/preview'
+          for p in $PATHS; do
             code=$(curl -s --max-time 15 -o /tmp/rs.out -w '%{http_code}' -H "User-Agent: $UA" -H 'Accept: application/json' -H 'X-Requested-With: XMLHttpRequest' "$H1$p" || echo ERR)
             echo "R GET $p -> $code :: $(head -c 80 /tmp/rs.out | tr '\n' ' ')"
             sleep 1
-          done <<'EOP'
-/v1/checkin
-/v1/checkins
-/v1/report_issue
-/v1/reports
-/v1/research
-/v1/restore
-/v1/roles
-/v1/sample_templates
-/v1/schedules
-/v1/search
-/v1/sent_files
-/v1/settings
-/v1/setup
-/v1/statuses
-/v1/submissions
-/v1/submissions/total
-/v1/subscribe
-/v1/supervisions
-/v1/sync
-/v1/tasks
-/v1/tickets
-/v1/total
-/v1/training
-/v1/translator
-/v1/translator/detect
-/v1/unreachables
-/v1/auto_docs/x/preview
-EOP
+          done
           echo "BATTJ_DONE"
