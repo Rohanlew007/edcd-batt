@@ -1,0 +1,81 @@
+name: batt4
+on:
+  workflow_dispatch:
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - name: oauth-citations-origins-forms
+        run: |
+          set -u
+          UA='Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0'
+          H1=https://api.ecourtdate.com
+          C=https://api.citations.ecourtdate.com
+          P=https://portals.ecourtdate.com
+          A=https://auth.ecourtdate.com
+          echo "=== IP ==="
+          curl -s --max-time 10 https://api.ipify.org; echo
+          echo "=== A. POST /oauth/token client_credentials (public client_ids) ==="
+          for cid in C5aRYUevyR9BDi1THXm1JhgE4PHxNK33 1asFUAZ0kPbO1pEbNVStgF0kBo9yPlZb 7a0S7yL2TAa4P2SDOaYGwIxtxYONk0OM; do
+            code=$(curl -s --max-time 15 -o /tmp/ot.out -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "User-Agent: $UA" -d "{\"grant_type\":\"client_credentials\",\"client_id\":\"$cid\",\"client_secret\":\"bb-test-not-real\"}" "$H1/oauth/token" || echo ERR)
+            echo "A POST /oauth/token cc $cid -> $code :: $(head -c 120 /tmp/ot.out | tr '\n' ' ')"
+            sleep 1
+          done
+          code=$(curl -s --max-time 15 -o /tmp/ot.out -w '%{http_code}' -X POST -H 'Content-Type: application/x-www-form-urlencoded' -H "User-Agent: $UA" --data-urlencode 'grant_type=client_credentials' --data-urlencode 'client_id=C5aRYUevyR9BDi1THXm1JhgE4PHxNK33' "$A/oauth/token" || echo ERR)
+          echo "A POST auth0 host cc form-encoded -> $code :: $(head -c 120 /tmp/ot.out | tr '\n' ' ')"
+          sleep 1
+          echo "=== B. POST /auth/lookup (expect turnstile gate) ==="
+          code=$(curl -s --max-time 15 -o /tmp/al.out -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "User-Agent: $UA" -H 'X-Requested-With: XMLHttpRequest' -d '{"email":"bug2testerr@gmail.com","cf-turnstile-response":"bb-test"}' "$P/auth/lookup" || echo ERR)
+          echo "B POST portals/auth/lookup -> $code :: $(head -c 150 /tmp/al.out | tr '\n' ' ')"
+          sleep 1
+          echo "=== C. citations clone POST probes ==="
+          for p in /v1/citations /v1/messages /v1/settings; do
+            code=$(curl -s --max-time 15 -o /tmp/cc.out -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "User-Agent: $UA" -d '{}' "$C$p" || echo ERR)
+            echo "C POST $p -> $code :: $(head -c 100 /tmp/cc.out | tr '\n' ' ')"
+            sleep 1
+          done
+          echo "=== D. Origin-allowlist completion (H-INV14-E) ==="
+          for org in nonexistent-bbtest.ecourtdate.com auth.ecourtdate.com evil.example.com; do
+            code=$(curl -s --max-time 15 -D /tmp/oh -o /dev/null -w '%{http_code}' -H "User-Agent: $UA" -H "Origin: https://$org" "$P/" || echo ERR)
+            acao=$(grep -i '^access-control-allow-origin' /tmp/oh | tr -d '\r')
+            echo "D GET $P/ Origin=$org -> $code ACAO=${acao:-none}"
+            sleep 1
+          done
+          echo "=== E. portals form CSRF harvest + field map (GET only, no submit) ==="
+          code=$(curl -s --max-time 15 -c /tmp/fj.txt -o /tmp/fh.html -w '%{http_code}' -H "User-Agent: $UA" "$P/w/4Mv4oDHiCTWA" || echo ERR)
+          tok=$(grep -o 'name="request-token" content="[^"]*"' /tmp/fh.html | head -1 | sed 's/.*content="//;s/"//')
+          echo "E GET /w/4Mv4oDHiCTWA -> $code token=${tok:0:8}... html_bytes=$(wc -c < /tmp/fh.html)"
+          sleep 1
+          echo "E form fields:"
+          grep -oE '<(input|select|textarea)[^>]*name="[^"]*"' /tmp/fh.html | grep -oE 'name="[^"]*"' | sort -u | head -20
+          grep -oE 'type="file"' /tmp/fh.html | head -3
+          echo "=== E2. empty POST validation-shape (NO real submit) ==="
+          if [ -n "$tok" ]; then
+            code=$(curl -s --max-time 15 -b /tmp/fj.txt -o /tmp/fp.out -w '%{http_code}' -X POST -H "User-Agent: $UA" -H 'X-Requested-With: XMLHttpRequest' -H "X-Request-Token: $tok" -H 'Content-Type: application/json' -d '{}' "$P/w/4Mv4oDHiCTWA" || echo ERR)
+            echo "E2 POST empty -> $code :: $(head -c 200 /tmp/fp.out | tr '\n' ' ')"
+          else
+            echo "E2 SKIPPED (no token harvested)"
+          fi
+
+          echo "=== F. subdomain fingerprint pass (tr-free) ==="
+          HOSTS='oauth.ecourtdate.com domains.ecourtdate.com legal.ecourtdate.com partners.ecourtdate.com jobs.ecourtdate.com texas.ecourtdate.com status.ecourtdate.com cdn.ecourtdate.com'
+          for h in $HOSTS; do
+            code=$(curl -s --max-time 15 -D /tmp/sh -o /tmp/sb.out -w '%{http_code}' -H "User-Agent: $UA" "https://$h/" || echo ERR)
+            srv=$(grep -icE 'server:' /tmp/sh || true)
+            loc=$(grep -i '^location:' /tmp/sh | head -1 || true)
+            echo "F https://$h/ -> $code srv_hdrs=$srv ${loc:-noloc} :: $(head -c 100 /tmp/sb.out | tr -d '\n' | head -c 100)"
+            sleep 1
+          done
+          echo "=== G. robots pass ==="
+          for h in oauth domains legal partners jobs texas status; do
+            code=$(curl -s --max-time 15 -o /tmp/rb.out -w '%{http_code}' -H "User-Agent: $UA" "https://$h.ecourtdate.com/robots.txt" || echo ERR)
+            echo "G $h/robots.txt -> $code :: $(head -c 100 /tmp/rb.out | tr -d '\n')"
+            sleep 1
+          done
+          echo "=== H. warrants docs sitemap/llms ==="
+          for u in https://docs.warrants.ecourtdate.com/sitemap.xml https://docs.warrants.ecourtdate.com/llms.txt; do
+            code=$(curl -s --max-time 15 -o /tmp/db.out -w '%{http_code}' -H "User-Agent: $UA" "$u" || echo ERR)
+            echo "H $u -> $code :: $(head -c 120 /tmp/db.out | tr -d '\n')"
+            sleep 1
+          done
+          echo "BATTJ4_DONE"
