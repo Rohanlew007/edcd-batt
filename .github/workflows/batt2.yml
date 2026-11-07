@@ -1,0 +1,38 @@
+name: batt2
+on:
+  workflow_dispatch:
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - name: warrants-public
+        run: |
+          set -u
+          W=https://api.warrants.ecourtdate.com
+          F=https://files.warrants.ecourtdate.com
+          UA='Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0'
+          g() {
+            code=$(curl -s --max-time 15 -D /tmp/wh -o /tmp/wb.out -w '%{http_code}' -H "User-Agent: $UA" -H 'Accept: application/json' "$1" || echo ERR)
+            rl=$(grep -i '^rateLimit-remaining' /tmp/wh | tr -d '\r' | head -1)
+            echo "W GET $1 -> $code $rl :: $(head -c 200 /tmp/wb.out | tr '\n' ' ')"
+            sleep 1
+          }
+          echo "=== IP ==="
+          curl -s --max-time 10 https://api.ipify.org; echo
+          echo "=== warrants public surface ==="
+          g "$W/health"
+          g "$W/v1/settings/public/ew-2026-004182-f3a91c"
+          g "$W/v1/settings/public/ew-2026-999999-zzzzzz"
+          g "$W/v1/settings/public/ew-2026-004182-deadbe"
+          g "$W/v1/public/branding/51d3c8a4-9e2b-4d17-a6f0-3b8c5e1f7d29"
+          g "$W/v1/public/branding/00000000-0000-4000-8000-000000000000"
+          g "$F/agencies/4f0c9d2e/logo.png"
+          g "$F/agencies/4f0c9d2e/warrants/9d2b6e14-6f1a-4a1c-9c0e-6f5f4b3a2d10/physician-certificate.pdf"
+          g "$F/"
+          echo "=== verb-gap spot: settings/public variants ==="
+          for v in POST PUT DELETE PATCH; do
+            code=$(curl -s --max-time 15 -o /tmp/wb.out -w '%{http_code}' -X $v -H "User-Agent: $UA" -H 'Content-Type: application/json' -d '{}' "$W/v1/settings/public/ew-2026-004182-f3a91c" || echo ERR)
+            echo "W $v /v1/settings/public/ew-2026-004182-f3a91c -> $code :: $(head -c 80 /tmp/wb.out | tr '\n' ' ')"
+            sleep 1
+          done
+          echo "BATTJ2_DONE"
