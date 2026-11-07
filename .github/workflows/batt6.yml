@@ -1,0 +1,54 @@
+name: batt6
+on:
+  workflow_dispatch:
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - name: gaps-battery
+        run: |
+          set -u
+          UA='Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0'
+          H1=https://api.ecourtdate.com
+          W=https://api.warrants.ecourtdate.com
+          echo "=== IP ==="
+          curl -s --max-time 10 https://api.ipify.org; echo
+          echo "=== K. FastAPI docs surfaces on warrants + citations ==="
+          for u in "$W/docs" "$W/redoc" "$W/openapi.json" "$W/openapi.yaml" https://api.citations.ecourtdate.com/redoc https://api.citations.ecourtdate.com/openapi.json; do
+            code=$(curl -s --max-time 15 -o /tmp/k.out -w '%{http_code}' -H "User-Agent: $UA" -H 'Accept: application/json' "$u" || echo ERR)
+            echo "K GET $u -> $code :: $(head -c 100 /tmp/k.out | tr -d '\n')"
+            sleep 1
+          done
+          echo "=== L. warrants /v1/warrants/public/{slug} (missed in batt2) ==="
+          for s in ew-2026-004182-f3a91c ew-2026-999999-zzzzzz; do
+            code=$(curl -s --max-time 15 -o /tmp/l.out -w '%{http_code}' -H "User-Agent: $UA" -H 'Accept: application/json' "$W/v1/warrants/public/$s" || echo ERR)
+            echo "L GET /v1/warrants/public/$s -> $code :: $(head -c 120 /tmp/l.out | tr -d '\n')"
+            sleep 1
+          done
+          echo "=== M. non-versioned auth family POST on main api ==="
+          mp() {
+            code=$(curl -s --max-time 15 -o /tmp/m.out -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "User-Agent: $UA" -H 'X-Requested-With: XMLHttpRequest' -d "$2" "$H1$1" || echo ERR)
+            echo "M POST $1 -> $code :: $(head -c 130 /tmp/m.out | tr -d '\n')"
+            sleep 1
+          }
+          mp /auth/lookup '{"email":"bug2testerr@gmail.com"}'
+          mp /auth/lookup '{}'
+          mp /auth/user '{}'
+          mp /otps '{}'
+          mp /otps/verify '{"code":"000000"}'
+          mp /auth/login '{}'
+          mp /auth/token '{}'
+          echo "=== N. version pivot /v2 /internal on top v1 paths ==="
+          P20='/schedules /schedules/public /events /clients /cases /users /me /health /portals /portals/schedule /settings /queue/visits /checkins /messages /documents /search /dashboards /webhooks /api-keys /exports'
+          for pre in /v2 /internal; do
+            for p in $P20; do
+              code=$(curl -s --max-time 15 -o /tmp/n.out -w '%{http_code}' -H "User-Agent: $UA" -H 'Accept: application/json' -H 'X-Requested-With: XMLHttpRequest' "$H1$pre$p" || echo ERR)
+              b=$(head -c 50 /tmp/n.out | tr -d '\n')
+              case "$code" in
+                404) echo "N $pre$p -> 404 :: $b";;
+                *) echo "N* $pre$p -> $code :: $b";;
+              esac
+              sleep 1
+            done
+          done
+          echo "BATTJ6_DONE"
